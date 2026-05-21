@@ -40,7 +40,7 @@ done
 # ── 2. Non-zero file sizes ────────────────────────────────────────────────────
 
 echo "[2/6] File sizes non-zero"
-for F in "$BACKUP_DIR"/*.{tar.gz,enc,sql.gz} 2>/dev/null; do
+for F in "$BACKUP_DIR"/*.tar.gz "$BACKUP_DIR"/*.enc "$BACKUP_DIR"/*.sql.gz; do
   [[ -f "$F" ]] || continue
   SIZE=$(stat -c%s "$F" 2>/dev/null || echo 0)
   FNAME=$(basename "$F")
