@@ -1,0 +1,176 @@
+version: "3.9"
+
+# OMNI-ANCHOR v4.3 — Supporting Infrastructure
+# Note: hermes-core runs natively via systemd (hermes-gateway.service)
+# This compose manages: redis, nginx, spokes
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - hub-net
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    networks:
+      - hub-net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - /var/www/widget:/var/www/widget:ro
+      - /var/www/html:/var/www/html:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+
+  spoke-heather:
+    build:
+      context: ./spokes
+      dockerfile: Dockerfile
+      args:
+        SPOKE_ID: heather
+    image: omni-anchor/spoke:latest
+    container_name: spoke-heather
+    restart: unless-stopped
+    networks:
+      - spoke-net
+    volumes:
+      - spoke-heather-data:/data/spoke-heather:rw
+    environment:
+      - SPOKE_ID=heather
+      - MARKET=hudson_valley
+      - HUB_RPC_URL=http://host-gateway:8001/rpc
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  spoke-alpha:
+    build:
+      context: ./spokes
+      dockerfile: Dockerfile
+      args:
+        SPOKE_ID: alpha
+    image: omni-anchor/spoke:latest
+    container_name: spoke-alpha
+    restart: unless-stopped
+    networks:
+      - spoke-net
+    volumes:
+      - spoke-alpha-data:/data/spoke-alpha:rw
+    environment:
+      - SPOKE_ID=alpha
+      - MARKET=suncoast
+      - HUB_RPC_URL=http://host-gateway:8001/rpc
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  spoke-beta:
+    build:
+      context: ./spokes
+      dockerfile: Dockerfile
+      args:
+        SPOKE_ID: beta
+    image: omni-anchor/spoke:latest
+    container_name: spoke-beta
+    restart: unless-stopped
+    networks:
+      - spoke-net
+    volumes:
+      - spoke-beta-data:/data/spoke-beta:rw
+    environment:
+      - SPOKE_ID=beta
+      - MARKET=stillway
+      - HUB_RPC_URL=http://host-gateway:8001/rpc
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  spoke-gamma:
+    build:
+      context: ./spokes
+      dockerfile: Dockerfile
+      args:
+        SPOKE_ID: gamma
+    image: omni-anchor/spoke:latest
+    container_name: spoke-gamma
+    restart: unless-stopped
+    networks:
+      - spoke-net
+    volumes:
+      - spoke-gamma-data:/data/spoke-gamma:rw
+    environment:
+      - SPOKE_ID=gamma
+      - MARKET=general
+      - HUB_RPC_URL=http://host-gateway:8001/rpc
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+networks:
+  hub-net:
+    driver: bridge
+  spoke-net:
+    driver: bridge
+    internal: true
+
+volumes:
+  redis-data:
+  spoke-heather-data:
+  spoke-alpha-data:
+  spoke-beta-data:
+  spoke-gamma-data:

@@ -1,0 +1,16 @@
+{
+  "apex": {
+    "node_id": "apex-001",
+    "name": "Glenn Fitzgerald Jr.",
+    "username": "@Willowgrf",
+    "role": "apex",
+    "telegram_id": 7794812292,
+    "permissions": ["ALL"],
+    "override_scope": "GLOBAL",
+    "can_approve_freezes": true,
+    "can_kill_freezes": true,
+    "can_access_all_vaults": true,
+    "can_modify_human_network": true
+  },
+  "field_agents": {}
+}

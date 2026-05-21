@@ -1,0 +1,14 @@
+# credentials — use .env.template
+.env
+
+# runtime data
+.clawmem/episodic.db
+.clawmem/__pycache__/
+.keys/
+__pycache__/
+*.pyc
+*.pyo
+
+# logs / tmp
+*.log
+.DS_Store

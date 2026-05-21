@@ -1,0 +1,97 @@
+# FILE 06: STORAGE MANIFEST
+# ClawMem Vault Definitions — Hard-Walled Paths & Encryption Tiers
+
+version: "1.0"
+base_path: "/root/omni-anchor/vaults"
+
+vaults:
+
+  v1_real_estate:
+    path: "/root/omni-anchor/vaults/v1-real-estate"
+    label: "Real Estate Transaction Engine"
+    encryption_tier: 2          # AES-256 at rest
+    access_mode: read_write
+    allowed_callers:
+      - hermes-core
+      - spoke-heather
+      - spoke-alpha
+    mcp_integrations:
+      - fub                     # Follow Up Boss CRM
+      - sierra                  # Sierra lead management
+      - fello                   # Fello seller platform
+    inbound_writes: allowed
+    purge_on_session_end: false
+    sqlite_fts5_index: true
+
+  v2_stillway:
+    path: "/root/omni-anchor/vaults/v2-stillway"
+    label: "Stillway Breath-Sync & HyperFrames"
+    encryption_tier: 2
+    access_mode: read_write
+    allowed_callers:
+      - hermes-core
+      - spoke-beta
+    mcp_integrations: []
+    inbound_writes: allowed
+    purge_on_session_end: false
+    sqlite_fts5_index: true
+
+  v3_mthi:
+    path: "/root/omni-anchor/vaults/v3-mthi"
+    label: "MTHI Sanctuary — Spatial Logic Graph"
+    encryption_tier: 3          # AES-256 + envelope encryption
+    access_mode: read_only
+    allowed_callers:
+      - hermes-core             # read-only fetch only
+    mcp_integrations: []
+    inbound_writes: BLOCKED     # enforced by vault3_write_interceptor
+    purge_on_session_end: true  # cross-pollination snapshots purged
+    sqlite_fts5_index: false    # no indexing — data never touches op memory
+
+  v4_fastsigns:
+    path: "/root/omni-anchor/vaults/v4-fastsigns"
+    label: "FastSigns Legacy Archive"
+    encryption_tier: 1          # standard encryption, read-only archive
+    access_mode: read_only
+    allowed_callers:
+      - hermes-core
+    mcp_integrations: []
+    inbound_writes: BLOCKED
+    purge_on_session_end: false
+    sqlite_fts5_index: true
+    status: exited              # legacy state — no active operations
+
+# Shared memory layer (fast memory — prefix-cache optimized)
+fast_memory:
+  memory_md:
+    path: "/root/omni-anchor/.clawmem/MEMORY.md"
+    max_chars: 4000
+    injection_mode: frozen_snapshot
+    cache_strategy: prefix_cache
+
+  user_md:
+    path: "/root/omni-anchor/.clawmem/USER.md"
+    max_chars: 2000
+    injection_mode: frozen_snapshot
+    cache_strategy: prefix_cache
+
+# Episodic memory (zero-token-cost recall)
+episodic_memory:
+  engine: sqlite_fts5
+  db_path: "/root/omni-anchor/.clawmem/episodic.db"
+  schema: |
+    CREATE VIRTUAL TABLE IF NOT EXISTS episodes USING fts5(
+      session_id,
+      task_type,
+      timestamp,
+      context_summary,
+      outcome,
+      vault_ref,
+      tokenize='porter unicode61'
+    );
+
+# Procedural memory (skill library)
+procedural_memory:
+  skills_path: "/root/omni-anchor/.clawmem/skills/"
+  index_db: "/root/omni-anchor/.clawmem/episodic.db"
+  auto_write_on_tier2_success: true

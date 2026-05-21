@@ -1,0 +1,22 @@
+{
+  "legacy_netlify": {
+    "host": "willow-fub-glenn.netlify.app",
+    "status": "ACTIVE — pending migration to api.hvsold.com",
+    "webhooks": [
+      {"subscriptionId": "3f993abd-ed58-431d-bc6f-bb15ac009886", "eventType": "FormSubmission"},
+      {"subscriptionId": "0fc688a9-962a-429e-a9d9-6ae90ea0dce8", "eventType": "ContactEnriched"},
+      {"subscriptionId": "96227373-9c19-420c-b079-277403de27b2", "eventType": "EmailClick"},
+      {"subscriptionId": "86ebf18d-c41c-4f82-aaac-7559d4481f44", "eventType": "DashboardClick"},
+      {"subscriptionId": "ab2447ae-3031-40e3-93ab-894b9dc1db9f", "eventType": "ContactDetailsUpdated"},
+      {"subscriptionId": "fa4622b4-46b7-4823-9686-cbba7b52f860", "eventType": "ContactUnsubscribed"},
+      {"subscriptionId": "bc750877-8034-437b-ba1b-4605ff8384b0", "eventType": "PostcardScan"}
+    ]
+  },
+  "target_kvm4": {
+    "host": "api.hvsold.com",
+    "endpoint": "https://api.hvsold.com/webhooks/fello",
+    "server_ip": "92.112.184.45",
+    "status": "PENDING — awaiting DNS + TLS"
+  },
+  "missing_events": ["TagsAdded", "TagsRemoved"]
+}

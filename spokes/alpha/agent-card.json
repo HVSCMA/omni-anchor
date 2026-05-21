@@ -1,0 +1,18 @@
+{
+    "spoke_id": "alpha",
+    "version": "1.0",
+    "market_scope": [
+        "suncoast"
+    ],
+    "status": "active",
+    "capabilities": [
+        "crm.fub.read",
+        "crm.fub.mutate.frozen",
+        "crm.sierra.read",
+        "crm.fello.read",
+        "crm.fello.mutate.frozen"
+    ],
+    "rpc_endpoint": "http://spoke-alpha:8080/rpc",
+    "health_endpoint": "http://spoke-alpha:8080/health",
+    "max_concurrent_tasks": 5
+}
