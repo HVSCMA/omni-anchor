@@ -60,6 +60,7 @@ log "━━━━━━━━━━━━━━━━━━━━━━━━━
 [[ -f "$BACKUP_KEY_FILE" ]] || die "Backup key not found at $BACKUP_KEY_FILE"
 [[ $DRY_RUN -eq 0 ]] && mkdir -p "$BACKUP_DIR"
 > "$LOG"
+[[ $DRY_RUN -eq 0 ]] && > "$MANIFEST"  # reset manifest on each run
 
 FREE_KB=$(df -k "$LOCAL_BACKUP_ROOT" | awk 'NR==2{print $4}')
 [[ $FREE_KB -lt 524288 ]] && warn "Low disk space: ${FREE_KB}KB free"  # warn under 512MB
