@@ -97,6 +97,17 @@ else
   ok "Node.js present: $(node --version)"
 fi
 
+# ── Kernel tuning ─────────────────────────────────────────────────────────────
+# Required for Redis — prevents background save failures under memory pressure
+
+if ! grep -q "vm.overcommit_memory" /etc/sysctl.conf 2>/dev/null; then
+  echo "vm.overcommit_memory = 1" >> /etc/sysctl.conf
+  sysctl vm.overcommit_memory=1 -q
+  ok "vm.overcommit_memory = 1 applied"
+else
+  ok "vm.overcommit_memory already set"
+fi
+
 # ── Create runtime directories ────────────────────────────────────────────────
 
 info "Creating runtime directories…"
