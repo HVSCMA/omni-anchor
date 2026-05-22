@@ -1,0 +1,22 @@
+[Unit]
+Description=Hermes Gateway — OMNI-ANCHOR Telegram AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+EnvironmentFile=/root/omni-anchor/.env
+EnvironmentFile=/root/.hermes/.env
+Environment="HERMES_HOME=/root/.hermes"
+ExecStart=/usr/local/lib/hermes-agent/venv/bin/hermes gateway run --replace
+Restart=always
+RestartSec=10
+TimeoutStopSec=210
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hermes-gateway
+
+[Install]
+WantedBy=multi-user.target

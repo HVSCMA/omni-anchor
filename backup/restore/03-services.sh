@@ -46,25 +46,21 @@ for UNIT in mcp-interceptor.service fello-webhook.service; do
   fi
 done
 
-# ── User unit (hermes-gateway) ────────────────────────────────────────────────
+# ── System unit (hermes-gateway) ─────────────────────────────────────────────
+# Installed from repo (systemd/hermes-gateway.service), not backup archive
 
-if [[ -f "$TMPDIR/hermes-gateway.service" ]]; then
-  mkdir -p "$SYSTEMD_USER"
-  cp "$TMPDIR/hermes-gateway.service" "$SYSTEMD_USER/hermes-gateway.service"
-  ok "Installed hermes-gateway.service → $SYSTEMD_USER/"
+REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+HERMES_UNIT="$REPO_DIR/systemd/hermes-gateway.service"
 
-  # Requires lingering enabled so user service survives logout
-  if ! loginctl show-user root 2>/dev/null | grep -q "Linger=yes"; then
-    loginctl enable-linger root
-    ok "Enabled lingering for root"
-  fi
-
-  systemctl --user daemon-reload
-  systemctl --user enable hermes-gateway.service 2>/dev/null && ok "Enabled hermes-gateway"
-  # Note: hermes-gateway needs state restored (step 05) before it can start cleanly
+if [[ -f "$HERMES_UNIT" ]]; then
+  cp "$HERMES_UNIT" "$SYSTEMD_SYSTEM/hermes-gateway.service"
+  ok "Installed hermes-gateway.service → $SYSTEMD_SYSTEM/"
+  systemctl daemon-reload
+  systemctl enable hermes-gateway.service 2>/dev/null && ok "Enabled hermes-gateway"
+  # Note: start after step 05 (state restore) so auth.json and config.yaml are in place
   echo "  ↳ hermes-gateway.service enabled — start after step 05 (state restore)"
 else
-  warn "hermes-gateway.service not in archive"
+  warn "systemd/hermes-gateway.service not found in repo — skipping"
 fi
 
 # ── omni-backup timer (if present) ────────────────────────────────────────────
