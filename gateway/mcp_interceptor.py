@@ -17,10 +17,18 @@ Telegram webhook (/webhook/telegram):
 Freeze management:
   POST /freeze/{id}/approve  → execute stored mutation
   POST /freeze/{id}/kill     → discard
+
+FUB inbound webhooks (/webhooks/fub):
+  Receives FUB events, verifies HMAC-SHA256, routes to Telegram + ClawMem audit.
+  Signature: FUB-Signature header = hmac_sha256(base64(raw_body), X-System-Key).
+  Payload: {eventId, eventCreated, event, resourceIds[], uri, data{}} — no inline
+  person data; handler GETs the uri to fetch full resource details.
 """
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import os
 import sqlite3
@@ -31,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
+from fastapi import BackgroundTasks, FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -424,6 +432,222 @@ async def widget_analyze(
 @app.get("/widget/users")
 async def widget_users():
     return {"users": [{"id": k, **v} for k, v in FUB_USERS.items()]}
+
+# ── FUB inbound webhooks ──────────────────────────────────────────────────────
+#
+# FUB payload schema (no inline person data — must GET uri for details):
+#   { eventId, eventCreated, event, resourceIds: [int], uri: str|null, data: {} }
+#
+# Signature: FUB-Signature = hmac_sha256(base64(raw_body), X-System-Key)
+
+
+def _verify_fub_sig(raw_body: bytes, sig_header: str) -> bool:
+    if not FUB_SYS_KEY:
+        return True  # system key not yet registered — skip
+    expected = hmac.new(
+        FUB_SYS_KEY.encode(),
+        base64.b64encode(raw_body),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, sig_header)
+
+
+async def _fub_get(uri: str) -> dict:
+    if not uri:
+        return {}
+    try:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(uri, headers=crm_headers("fub"), timeout=10)
+            return r.json() if r.status_code == 200 else {}
+    except Exception:
+        return {}
+
+
+def _person_display(p: dict) -> tuple:
+    name   = f"{p.get('firstName', '')} {p.get('lastName', '')}".strip() or "Unknown"
+    emails = p.get("emails") or []
+    email  = emails[0].get("value", "—") if emails else p.get("email", "—")
+    phones = p.get("phones") or []
+    phone  = phones[0].get("value", "—") if phones else p.get("phone", "—")
+    return name, email, phone
+
+
+async def _process_fub_event(event: str, payload: dict):
+    ts  = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    uri = payload.get("uri")
+    ids = payload.get("resourceIds", [])
+    dat = payload.get("data", {})
+
+    # Always audit
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO mcp_audit(event,method,path,crm,body,timestamp) VALUES(?,?,?,?,?,?)",
+        (f"fub_inbound_{event}", "WEBHOOK", "/webhooks/fub",
+         "fub", json.dumps(payload)[:2000], datetime.now(timezone.utc).isoformat())
+    )
+    con.commit()
+    con.close()
+
+    if event == "peopleCreated":
+        raw    = await _fub_get(uri)
+        people = raw.get("people", [raw] if "id" in raw else [])
+        for p in people[:3]:   # batch creates: notify up to 3
+            name, email, phone = _person_display(p)
+            assigned = FUB_USERS.get(p.get("assignedUserId", 0), {}).get("name", "Unassigned")
+            source   = p.get("source", "—")
+            await tg_send(
+                f"🟢 <b>NEW FUB LEAD</b>\n"
+                f"Name   : {name}\n"
+                f"Email  : {email}\n"
+                f"Phone  : {phone}\n"
+                f"Source : {source}\n"
+                f"Assign : {assigned}\n"
+                f"ID     : {p.get('id', '?')}\n"
+                f"Time   : {ts}"
+            )
+
+    elif event == "peopleStageUpdated":
+        # data.stage = new stage name; fetch person for name/agent
+        new_stage = dat.get("stage", "?")
+        raw       = await _fub_get(uri)
+        people    = raw.get("people", [raw] if "id" in raw else [])
+        for p in people[:3]:
+            name, _, _ = _person_display(p)
+            assigned   = FUB_USERS.get(p.get("assignedUserId", 0), {}).get("name", "?")
+            await tg_send(
+                f"🔄 <b>FUB STAGE CHANGE</b>\n"
+                f"Lead   : {name} (ID: {p.get('id', '?')})\n"
+                f"Stage  : → {new_stage}\n"
+                f"Agent  : {assigned}\n"
+                f"Time   : {ts}"
+            )
+
+    elif event == "appointmentsCreated":
+        raw  = await _fub_get(uri)
+        appt = raw.get("appointments", [raw] if "id" in raw else [{}])[0]
+        pid  = appt.get("personId") or (ids[0] if ids else None)
+        name = "Unknown"
+        if pid:
+            p    = await _fub_get(f"{CRM_BACKENDS['fub']}/people/{pid}")
+            name = _person_display(p)[0]
+        title = appt.get("title", "—")
+        start = appt.get("startTime", appt.get("start", "—"))
+        agent = FUB_USERS.get(appt.get("assignedUserId", 0), {}).get("name", "?")
+        await tg_send(
+            f"📅 <b>FUB APPOINTMENT</b>\n"
+            f"Lead   : {name}\n"
+            f"Title  : {title}\n"
+            f"Start  : {start}\n"
+            f"Agent  : {agent}\n"
+            f"Time   : {ts}"
+        )
+
+    elif event == "appointmentsUpdated":
+        raw  = await _fub_get(uri)
+        appt = raw.get("appointments", [raw] if "id" in raw else [{}])[0]
+        pid  = appt.get("personId") or (ids[0] if ids else None)
+        name = "Unknown"
+        if pid:
+            p    = await _fub_get(f"{CRM_BACKENDS['fub']}/people/{pid}")
+            name = _person_display(p)[0]
+        await tg_send(
+            f"📅 <b>FUB APPT UPDATED</b>\n"
+            f"Lead   : {name}\n"
+            f"Title  : {appt.get('title', '—')}\n"
+            f"Start  : {appt.get('startTime', appt.get('start', '—'))}\n"
+            f"Time   : {ts}"
+        )
+
+    elif event == "notesCreated":
+        raw  = await _fub_get(uri)
+        note = raw.get("notes", [raw] if "id" in raw else [{}])[0]
+        pid  = note.get("personId") or (ids[0] if ids else None)
+        name = "Unknown"
+        if pid:
+            p    = await _fub_get(f"{CRM_BACKENDS['fub']}/people/{pid}")
+            name = _person_display(p)[0]
+        await tg_send(
+            f"📝 <b>FUB NOTE</b>\n"
+            f"Lead   : {name}\n"
+            f"Subj   : {note.get('subject', '—')}\n"
+            f"Body   : {str(note.get('body', '')).strip()[:140]}\n"
+            f"Time   : {ts}"
+        )
+
+    elif event == "tasksCreated":
+        raw  = await _fub_get(uri)
+        task = raw.get("tasks", [raw] if "id" in raw else [{}])[0]
+        pid  = task.get("personId") or (ids[0] if ids else None)
+        name = "Unknown"
+        if pid:
+            p    = await _fub_get(f"{CRM_BACKENDS['fub']}/people/{pid}")
+            name = _person_display(p)[0]
+        agent = FUB_USERS.get(task.get("assignedUserId", 0), {}).get("name", "?")
+        await tg_send(
+            f"📋 <b>FUB TASK</b>\n"
+            f"Lead   : {name}\n"
+            f"Task   : {task.get('name', '—')}\n"
+            f"Due    : {task.get('dueDate', '—')}\n"
+            f"Agent  : {agent}\n"
+            f"Time   : {ts}"
+        )
+
+    elif event == "dealsCreated":
+        raw  = await _fub_get(uri)
+        deal = raw.get("deals", [raw] if "id" in raw else [{}])[0]
+        pid  = deal.get("personId") or (ids[0] if ids else None)
+        name = "Unknown"
+        if pid:
+            p    = await _fub_get(f"{CRM_BACKENDS['fub']}/people/{pid}")
+            name = _person_display(p)[0]
+        await tg_send(
+            f"💰 <b>FUB DEAL CREATED</b>\n"
+            f"Lead   : {name}\n"
+            f"Deal   : {deal.get('name', '—')}\n"
+            f"Value  : {deal.get('value', '—')}\n"
+            f"Stage  : {deal.get('stage', {}).get('name', '—') if isinstance(deal.get('stage'), dict) else deal.get('stage', '—')}\n"
+            f"Time   : {ts}"
+        )
+
+    # peopleUpdated, peopleTagsCreated, etc. — audit only, no Telegram
+
+
+@app.post("/webhooks/fub")
+async def fub_webhook(request: Request, background_tasks: BackgroundTasks):
+    body = await request.body()
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return JSONResponse({"status": "ok"})
+
+    event = payload.get("event", payload.get("eventType", "unknown"))
+
+    # Verify FUB-Signature if present (active once X-System-Key is registered)
+    sig = request.headers.get("FUB-Signature", "")
+    if sig and FUB_SYS_KEY and not _verify_fub_sig(body, sig):
+        audit("fub_sig_fail", "WEBHOOK", "/webhooks/fub", "fub",
+              {"event": event, "sig": sig[:20]})
+        # ACK anyway — prevents FUB from auto-disabling the webhook on delivery failure
+        return JSONResponse({"status": "ok", "note": "sig_mismatch_logged"})
+
+    background_tasks.add_task(_process_fub_event, event, payload)
+    return JSONResponse({"status": "ok", "event": event})
+
+
+@app.get("/webhooks/fub/status")
+async def fub_webhook_status():
+    con    = sqlite3.connect(DB_PATH)
+    recent = con.execute(
+        "SELECT event, timestamp FROM mcp_audit WHERE crm='fub' AND method='WEBHOOK' "
+        "ORDER BY timestamp DESC LIMIT 20"
+    ).fetchall()
+    con.close()
+    return {
+        "sys_key_configured": bool(FUB_SYS_KEY),
+        "recent_events": [{"event": r[0], "ts": r[1]} for r in recent],
+    }
+
 
 # ── Mutation description helper ───────────────────────────────────────────────
 
