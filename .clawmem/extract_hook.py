@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-os.environ.setdefault("GOOGLE_API_KEY", "AIzaSyDL19hk1vUNHuKqlPHvinzPCAXq390J1lI")
+
 os.environ.setdefault("CLAWMEM_PATH", "/root/omni-anchor/.clawmem")
 
 try:
