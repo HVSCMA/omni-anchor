@@ -76,8 +76,8 @@ def cmd_hook(_args):
     event_name = event.get("hook_event_name", "")
     message = (
         event.get("message") or
-        event.get("extra", {}).get("message") or
-        event.get("tool_input", {}).get("command") or
+        (event.get("extra") or {}).get("message") or
+        (event.get("tool_input") or {}).get("command") or
         ""
     )
 
