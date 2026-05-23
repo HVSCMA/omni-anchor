@@ -23,10 +23,21 @@ import memory_engine as mem
 
 def cmd_recall(args):
     if not args:
-        print("Usage: clawmem_cli.py recall <query>", file=sys.stderr)
+        print("Usage: clawmem_cli.py recall <query> [min_score]", file=sys.stderr)
         sys.exit(1)
-    query = " ".join(args)
-    memories = mem.recall(query)
+    
+    # Check if last argument looks like a score float (e.g. 0.35)
+    min_score = 0.35
+    if len(args) > 1:
+        try:
+            min_score = float(args[-1])
+            query = " ".join(args[:-1])
+        except ValueError:
+            query = " ".join(args)
+    else:
+        query = " ".join(args)
+
+    memories = mem.recall(query, min_score=min_score)
     if not memories:
         print("No relevant memories found.")
         return
@@ -85,7 +96,7 @@ def cmd_hook(_args):
         sys.exit(0)
 
     try:
-        memories = mem.recall(message.strip(), top_k=5, min_score=0.68)
+        memories = mem.recall(message.strip(), top_k=5, min_score=0.38)
         if not memories:
             sys.exit(0)
         context = mem.format_recall(memories)

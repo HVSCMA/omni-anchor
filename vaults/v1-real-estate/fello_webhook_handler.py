@@ -67,7 +67,11 @@ FREEZE_EVENTS = {
 
 async def process_event(event_type: str, payload: dict):
     contact = payload.get("contact", {})
-    contact_id = contact.get("contactId", "unknown")
+    # Fallback to alternative payload locations for contact information
+    contact_data = payload.get("data", {}) if not contact else contact
+    contact_info = contact_data.get("contactInfo", {}) if not contact else contact
+    
+    contact_id = contact_info.get("contactId", contact_data.get("contactId", "unknown"))
 
     log_event(event_type, contact_id, payload)
 
@@ -122,6 +126,11 @@ async def process_event(event_type: str, payload: dict):
 async def fello_webhook(request: Request, background_tasks: BackgroundTasks):
     # Immediate 200 ACK — Fello requires response within 10 seconds
     body = await request.body()
+    try:
+        with open("/root/omni-anchor/.clawmem/last_fello_payload.json", "w") as f_log:
+            f_log.write(body.decode('utf-8', errors='replace'))
+    except Exception:
+        pass
 
     sig = request.headers.get("fello-webhook-signature", "")
     if sig and not verify_signature(body, sig):
@@ -133,7 +142,16 @@ async def fello_webhook(request: Request, background_tasks: BackgroundTasks):
     except json.JSONDecodeError:
         return JSONResponse({"status": "ok"})  # ACK anyway
 
-    event_type = payload.get("eventType", "Unknown")
+    event_type = payload.get("eventType")
+    if not event_type and "events" in payload and isinstance(payload["events"], list) and len(payload["events"]) > 0:
+        # Fello bulk event envelope formatting
+        event_envelope = payload["events"][0]
+        event_type = event_envelope.get("eventType", "Unknown")
+        payload = event_envelope  # Unwrap envelope for processing downstream
+
+    if not event_type:
+        event_type = "Unknown"
+
     background_tasks.add_task(process_event, event_type, payload)
 
     return JSONResponse({"status": "ok", "event": event_type})

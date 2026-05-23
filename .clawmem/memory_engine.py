@@ -47,10 +47,32 @@ def _get_db() -> sqlite3.Connection:
 # ── Embedding ──────────────────────────────────────────────────────────────────
 
 def embed(text: str) -> np.ndarray:
-    from google import genai
-    client = genai.Client(api_key=GOOGLE_KEY)
-    result = client.models.embed_content(model=EMBED_MODEL, contents=text.strip()[:8000])
-    return np.array(result.embeddings[0].values, dtype=np.float32)
+    import json
+    import requests
+    # Load token from ~/.hermes/auth.json
+    try:
+        with open('/root/.hermes/auth.json') as f:
+            creds = json.load(f)
+        or_key = creds['credential_pool']['openrouter'][0]['access_token']
+    except Exception as e:
+        # Fallback to env variable
+        or_key = os.getenv("OPENROUTER_API_KEY", "")
+
+    url = "https://openrouter.ai/api/v1/embeddings"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {or_key}"
+    }
+    data = {
+        "model": "text-embedding-3-large",
+        "input": text.strip()[:8000]
+    }
+    resp = requests.post(url, headers=headers, json=data)
+    if resp.status_code != 200:
+        raise Exception(f"OpenRouter embedding failed with code {resp.status_code}: {resp.text}")
+    
+    result = resp.json()
+    return np.array(result['data'][0]['embedding'], dtype=np.float32)
 
 def _vec_to_blob(v: np.ndarray) -> bytes:
     return struct.pack(f"{len(v)}f", *v)
@@ -98,7 +120,7 @@ def store(content: str, memory_type: str = "fact", source: str = "conversation",
 
 # ── Recall ─────────────────────────────────────────────────────────────────────
 
-def recall(query: str, top_k: int = 6, min_score: float = 0.65,
+def recall(query: str, top_k: int = 6, min_score: float = 0.35,
            memory_type: str = None) -> list[dict]:
     query_vec = embed(query)
     con = _get_db()
@@ -129,9 +151,15 @@ def recall(query: str, top_k: int = 6, min_score: float = 0.65,
 
 def extract_from_turn(user_msg: str, assistant_reply: str,
                       session_id: str = None) -> list[str]:
-    """Use Gemini to extract key facts worth remembering from a conversation turn."""
-    from google import genai
-    client = genai.Client(api_key=GOOGLE_KEY)
+    """Use OpenRouter/Gemini Flash via direct API call to extract key facts worth remembering from a conversation turn."""
+    import json
+    import requests
+    try:
+        with open('/root/.hermes/auth.json') as f:
+            creds = json.load(f)
+        or_key = creds['credential_pool']['openrouter'][0]['access_token']
+    except Exception as e:
+        or_key = os.getenv("OPENROUTER_API_KEY", "")
 
     prompt = f"""Extract 0-5 concise, standalone facts worth remembering from this conversation.
 Rules:
@@ -146,8 +174,26 @@ Assistant replied: {assistant_reply[:600]}
 
 Facts to remember:"""
 
-    r = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-    text = r.text.strip()
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {or_key}"
+    }
+    data = {
+        "model": "google/gemini-2.5-flash",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1
+    }
+    resp = requests.post(url, headers=headers, json=data)
+    if resp.status_code != 200:
+        import sys
+        sys.stderr.write(f"[clawmem] extract failed with code {resp.status_code}: {resp.text}\n")
+        return []
+    
+    res = resp.json()
+    text = res['choices'][0]['message']['content'].strip()
     if text.upper() == "NONE" or not text:
         return []
     lines = [ln.strip() for ln in text.splitlines() if ln.strip() and ln.upper() != "NONE"]
