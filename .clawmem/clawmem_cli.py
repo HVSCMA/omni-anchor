@@ -12,6 +12,7 @@ Usage:
 """
 
 import json
+import logging
 import os
 import sys
 
@@ -80,7 +81,11 @@ def cmd_hook(_args):
         if not raw:
             sys.exit(0)
         event = json.loads(raw)
-    except (json.JSONDecodeError, Exception):
+        if event is None:
+            logging.warning("JSON parsing returned None for raw event data in hook, exiting.")
+            sys.exit(0)
+    except (json.JSONDecodeError, Exception) as e:
+        logging.error(f"Error parsing JSON from hook: {e}")
         sys.exit(0)
 
     # Extract query from the hook event

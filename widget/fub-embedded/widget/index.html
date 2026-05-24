@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FUB Embedded App Prototype</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f0f2f5; color: #333; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
+        h1 { color: #007bff; margin-bottom: 20px; }
+        p { line-height: 1.6; }
+        strong { color: #e44d26; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>FUB Embedded App Prototype</h1>
+        <p>Loading context from Follow Up Boss...</p>
+        <p id="personIdDisplay">Person ID: Not found</p>
+        <p>This is a placeholder for dynamic agent guidance.</p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const personId = urlParams.get('personId');
+            const personIdDisplay = document.getElementById('personIdDisplay');
+
+            if (personId) {
+                personIdDisplay.textContent = `Person ID: ${personId}`;
+                console.log(`FUB Embedded App loaded for Person ID: ${personId}`);
+            } else {
+                personIdDisplay.textContent = 'Person ID: Not found (check URL parameters or FUB SDK)';
+                console.warn('FUB Embedded App: Person ID not found in URL parameters.');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -398,40 +398,53 @@ async def widget_add_note(person_id: int, request: Request):
         )
     return JSONResponse(status_code=r.status_code, content=r.json() if r.content else {})
 
-@app.post("/widget/analyze")
-async def widget_analyze(
-    file: UploadFile = File(None),
-    prompt: str      = Form("Analyze this for real estate context"),
-    context: str     = Form(""),
-):
-    if not GOOGLE_KEY:
-        raise HTTPException(503, "GOOGLE_API_KEY not configured")
-    if not file:
-        raise HTTPException(400, "No file provided")
+    @app.post("/widget/analyze")
+    async def widget_analyze(
+        file: UploadFile = File(None),
+        prompt: str      = Form("Analyze this for real estate context"),
+        context: str     = Form(""),
+    ):
+        if not GOOGLE_KEY:
+            raise HTTPException(503, "GOOGLE_API_KEY not configured")
+        if not file:
+            raise HTTPException(400, "No file provided")
 
-    from google import genai
-    from google.genai import types
+        from google import genai
+        from google.genai import types
 
-    client = genai.Client(api_key=GOOGLE_KEY)
-    file_bytes = await file.read()
-    mime = file.content_type or "image/jpeg"
+        client = genai.Client(api_key=GOOGLE_KEY)
+        file_bytes = await file.read()
+        mime = file.content_type or "image/jpeg"
 
-    full_prompt = prompt
-    if context:
-        full_prompt = f"{prompt}\n\nContext: {context}"
+        full_prompt = prompt
+        if context:
+            full_prompt = f"{prompt}\n\nContext: {context}"
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-exp",
-        contents=[
-            types.Part.from_bytes(data=file_bytes, mime_type=mime),
-            full_prompt,
-        ]
-    )
-    return {"analysis": response.text}
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=[
+                types.Part.from_bytes(data=file_bytes, mime_type=mime),
+                full_prompt,
+            ]
+        )
+        return {"analysis": response.text}
 
-@app.get("/widget/users")
-async def widget_users():
-    return {"users": [{"id": k, **v} for k, v in FUB_USERS.items()]}
+    @app.post("/widget/request-guidance/{person_id}")
+    async def widget_request_guidance(person_id: int):
+        # Send Telegram message to Apex to trigger guidance generation
+        await tg_send(f"OMNI-ANCHOR: Trigger guidance for FUB Person ID: /generate_fub_guidance {person_id}")
+        audit("mcp_request_guidance", "POST", f"/widget/request-guidance/{person_id}", "fub", {"person_id": person_id})
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "queued",
+                "message": f"Guidance generation requested for Person ID {person_id}. Will be updated shorty."
+            }
+        )
+
+    @app.get("/widget/users")
+    async def widget_users():
+        return {"users": [{"id": k, **v} for k, v in FUB_USERS.items()]}
 
 # ── FUB inbound webhooks ──────────────────────────────────────────────────────
 #
